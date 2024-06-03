@@ -12,6 +12,7 @@ mod add_remove2;
 mod ccd2;
 mod character_controller2;
 mod collision_groups2;
+mod compiler_error_difficult;
 mod convex_polygons2;
 mod damping2;
 mod debug_box_ball2;
@@ -81,6 +82,7 @@ pub fn main() {
         ("CCD", ccd2::init_world),
         ("Character controller", character_controller2::init_world),
         ("Collision groups", collision_groups2::init_world),
+        ("Compiler_error", compiler_error_difficult::init_world),
         ("Convex polygons", convex_polygons2::init_world),
         ("Damping", damping2::init_world),
         ("Drum", drum2::init_world),
