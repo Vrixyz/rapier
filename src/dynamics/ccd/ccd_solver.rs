@@ -3,8 +3,8 @@ use crate::dynamics::{IslandManager, RigidBodyHandle, RigidBodySet};
 use crate::geometry::{ColliderParent, ColliderSet, CollisionEvent, NarrowPhase};
 use crate::math::Real;
 use crate::parry::utils::SortedPair;
-use crate::pipeline::{EventHandler, QueryPipeline, QueryPipelineMode};
-use crate::prelude::{ActiveEvents, CollisionEventFlags};
+use crate::pipeline::{EventHandler, QueryPipeline};
+use crate::prelude::{query_pipeline_generators, ActiveEvents, CollisionEventFlags};
 use parry::query::{DefaultQueryDispatcher, QueryDispatcher};
 use parry::utils::hashmap::HashMap;
 use std::collections::BinaryHeap;
@@ -52,32 +52,27 @@ impl CCDSolver {
     ///
     /// The `impacts` should be the result of a previous call to `self.predict_next_impacts`.
     pub fn clamp_motions(&self, dt: Real, bodies: &mut RigidBodySet, impacts: &PredictedImpacts) {
-        match impacts {
-            PredictedImpacts::Impacts(tois) => {
-                for (handle, toi) in tois {
-                    let rb = bodies.index_mut_internal(*handle);
-                    let local_com = &rb.mprops.local_mprops.local_com;
+        if let PredictedImpacts::Impacts(tois) = impacts {
+            for (handle, toi) in tois {
+                let rb = bodies.index_mut_internal(*handle);
+                let local_com = &rb.mprops.local_mprops.local_com;
 
-                    let min_toi = (rb.ccd.ccd_thickness
-                        * 0.15
-                        * crate::utils::inv(rb.ccd.max_point_velocity(&rb.integrated_vels)))
-                    .min(dt);
-                    // println!(
-                    //     "Min toi: {}, Toi: {}, thick: {}, max_vel: {}",
-                    //     min_toi,
-                    //     toi,
-                    //     rb.ccd.ccd_thickness,
-                    //     rb.ccd.max_point_velocity(&rb.integrated_vels)
-                    // );
-                    let new_pos = rb.integrated_vels.integrate(
-                        toi.max(min_toi),
-                        &rb.pos.position,
-                        &local_com,
-                    );
-                    rb.pos.next_position = new_pos;
-                }
+                let min_toi = (rb.ccd.ccd_thickness
+                    * 0.15
+                    * crate::utils::inv(rb.ccd.max_point_velocity(&rb.integrated_vels)))
+                .min(dt);
+                // println!(
+                //     "Min toi: {}, Toi: {}, thick: {}, max_vel: {}",
+                //     min_toi,
+                //     toi,
+                //     rb.ccd.ccd_thickness,
+                //     rb.ccd.max_point_velocity(&rb.integrated_vels)
+                // );
+                let new_pos =
+                    rb.integrated_vels
+                        .integrate(toi.max(min_toi), &rb.pos.position, local_com);
+                rb.pos.next_position = new_pos;
             }
-            _ => {}
         }
     }
 
@@ -122,10 +117,12 @@ impl CCDSolver {
         narrow_phase: &NarrowPhase,
     ) -> Option<Real> {
         // Update the query pipeline.
-        self.query_pipeline.update_with_mode(
-            bodies,
-            colliders,
-            QueryPipelineMode::SweepTestWithPredictedPosition { dt },
+        self.query_pipeline.update_with_generator(
+            query_pipeline_generators::SweptAabbWithPredictedPosition {
+                bodies,
+                colliders,
+                dt,
+            },
         );
 
         let mut pairs_seen = HashMap::default();
@@ -243,10 +240,8 @@ impl CCDSolver {
         let mut min_overstep = dt;
 
         // Update the query pipeline.
-        self.query_pipeline.update_with_mode(
-            bodies,
-            colliders,
-            QueryPipelineMode::SweepTestWithNextPosition,
+        self.query_pipeline.update_with_generator(
+            query_pipeline_generators::SweptAabbWithNextPosition { bodies, colliders },
         );
 
         /*
@@ -403,7 +398,7 @@ impl CCDSolver {
 
             let start_time = toi.toi;
 
-            // NOTE: the 1 and 2 indices (e.g., `ch1`, `ch2`) bellow are unrelated to the
+            // NOTE: the 1 and 2 indices (e.g., `ch1`, `ch2`) below are unrelated to the
             //       ones we used above.
             for ch1 in &colliders_to_check {
                 let co1 = &colliders[*ch1];

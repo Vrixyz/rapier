@@ -4,7 +4,7 @@ use crate::dynamics::{RigidBody, RigidBodyHandle, RigidBodySet};
 use crate::geometry::{ColliderHandle, ColliderSet, Ray};
 use crate::math::{Point, Real, Rotation, Vector};
 use crate::pipeline::{QueryFilter, QueryPipeline};
-use crate::utils::{WCross, WDot};
+use crate::utils::{SimdCross, SimdDot};
 
 /// A character controller to simulate vehicles using ray-casting for the wheels.
 pub struct DynamicRayCastVehicleController {
@@ -341,7 +341,7 @@ impl DynamicRayCastVehicleController {
         wheel.raycast_info.ground_object = None;
 
         if let Some((collider_hit, mut hit)) = hit {
-            if hit.toi == 0.0 {
+            if hit.time_of_impact == 0.0 {
                 let collider = &colliders[collider_hit];
                 let up_ray = Ray::new(source + rayvector, -rayvector);
                 if let Some(hit2) =
@@ -362,7 +362,7 @@ impl DynamicRayCastVehicleController {
             wheel.raycast_info.is_in_contact = true;
             wheel.raycast_info.ground_object = Some(collider_hit);
 
-            let hit_distance = hit.toi * raylen;
+            let hit_distance = hit.time_of_impact * raylen;
             wheel.raycast_info.suspension_length = hit_distance - wheel.radius;
 
             // clamp on max suspension travel
@@ -372,7 +372,7 @@ impl DynamicRayCastVehicleController {
                 .raycast_info
                 .suspension_length
                 .clamp(min_suspension_length, max_suspension_length);
-            wheel.raycast_info.contact_point_ws = ray.point_at(hit.toi);
+            wheel.raycast_info.contact_point_ws = ray.point_at(hit.time_of_impact);
 
             let denominator = wheel
                 .raycast_info
@@ -582,7 +582,7 @@ impl DynamicRayCastVehicleController {
                         wheel.side_impulse = resolve_single_bilateral(
                             &bodies[self.chassis],
                             &wheel.raycast_info.contact_point_ws,
-                            &ground_body,
+                            ground_body,
                             &wheel.raycast_info.contact_point_ws,
                             &self.axle[i],
                         );
@@ -664,11 +664,9 @@ impl DynamicRayCastVehicleController {
 
         if sliding {
             for wheel in &mut self.wheels {
-                if wheel.side_impulse != 0.0 {
-                    if wheel.skid_info < 1.0 {
-                        wheel.forward_impulse *= wheel.skid_info;
-                        wheel.side_impulse *= wheel.skid_info;
-                    }
+                if wheel.side_impulse != 0.0 && wheel.skid_info < 1.0 {
+                    wheel.forward_impulse *= wheel.skid_info;
+                    wheel.side_impulse *= wheel.skid_info;
                 }
             }
         }

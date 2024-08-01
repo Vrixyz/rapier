@@ -1,3 +1,5 @@
+#![allow(clippy::bad_bit_mask)] // Clippy will complain about the bitmasks due to Group::NONE being 0.
+
 /// Pairwise filtering using bit masks.
 ///
 /// This filtering method is based on two 32-bit values:
@@ -73,11 +75,10 @@ impl Default for InteractionGroups {
     }
 }
 
-use bitflags::bitflags;
-
-bitflags! {
+bitflags::bitflags! {
     /// A bit mask identifying groups for interaction.
     #[cfg_attr(feature = "serde-serialize", derive(Serialize, Deserialize))]
+    #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
     pub struct Group: u32 {
         /// The group n°1.
         const GROUP_1 = 1 << 0;
@@ -154,7 +155,7 @@ bitflags! {
 impl From<u32> for Group {
     #[inline]
     fn from(val: u32) -> Self {
-        unsafe { Self::from_bits_unchecked(val) }
+        Self::from_bits_retain(val)
     }
 }
 

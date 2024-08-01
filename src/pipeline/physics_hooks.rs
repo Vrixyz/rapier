@@ -69,7 +69,7 @@ impl<'a> ContactModificationContext<'a> {
 
         // Test the allowed normal with the local-space contact normal that
         // points towards the exterior of context.collider1.
-        let contact_is_ok = self.manifold.local_n1.dot(&allowed_local_n1) >= cang;
+        let contact_is_ok = self.manifold.local_n1.dot(allowed_local_n1) >= cang;
 
         match *self.user_data {
             CONTACT_CONFIGURATION_UNKNOWN => {
@@ -118,6 +118,7 @@ impl<'a> ContactModificationContext<'a> {
 
 bitflags::bitflags! {
     #[cfg_attr(feature = "serde-serialize", derive(Serialize, Deserialize))]
+    #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
     /// Flags affecting the behavior of the constraints solver for a given contact manifold.
     pub struct ActiveHooks: u32 {
         /// If set, Rapier will call `PhysicsHooks::filter_contact_pair` whenever relevant.

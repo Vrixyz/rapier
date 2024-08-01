@@ -5,7 +5,7 @@ use crate::math::Isometry;
 use std::ops::{Index, IndexMut};
 
 #[cfg_attr(feature = "serde-serialize", derive(Serialize, Deserialize))]
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 /// A set of colliders that can be handled by a physics `World`.
 pub struct ColliderSet {
     pub(crate) colliders: Arena<Collider>,
@@ -24,11 +24,11 @@ impl ColliderSet {
     }
 
     pub(crate) fn take_modified(&mut self) -> Vec<ColliderHandle> {
-        std::mem::replace(&mut self.modified_colliders, vec![])
+        std::mem::take(&mut self.modified_colliders)
     }
 
     pub(crate) fn take_removed(&mut self) -> Vec<ColliderHandle> {
-        std::mem::replace(&mut self.removed_colliders, vec![])
+        std::mem::take(&mut self.removed_colliders)
     }
 
     /// An always-invalid collider handle.
@@ -123,7 +123,7 @@ impl ColliderSet {
         self.modified_colliders.push(handle);
 
         let coll = self.colliders.get_mut(handle.0).unwrap();
-        parent.add_collider(
+        parent.add_collider_internal(
             handle,
             coll.parent.as_mut().unwrap(),
             &mut coll.pos,
@@ -167,7 +167,7 @@ impl ColliderSet {
                     };
 
                     if let Some(rb) = bodies.get_mut(new_parent_handle) {
-                        rb.add_collider(
+                        rb.add_collider_internal(
                             handle,
                             collider.parent.as_ref().unwrap(),
                             &mut collider.pos,

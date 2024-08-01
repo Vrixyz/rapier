@@ -7,8 +7,11 @@ use crate::math::{
     AngVector, AngularInertia, Isometry, Point, Real, Rotation, Translation, Vector,
 };
 use crate::parry::partitioning::IndexedData;
-use crate::utils::{WAngularInertia, WCross, WDot};
+use crate::utils::{SimdAngularInertia, SimdCross, SimdDot};
 use num::Zero;
+
+#[cfg(doc)]
+use super::IntegrationParameters;
 
 /// The unique handle of a rigid body added to a `RigidBodySet`.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Default)]
@@ -96,6 +99,7 @@ impl RigidBodyType {
 
 bitflags::bitflags! {
     #[cfg_attr(feature = "serde-serialize", derive(Serialize, Deserialize))]
+    #[derive(Copy, Clone, PartialEq, Eq, Debug)]
     /// Flags describing how the rigid-body has been modified by the user.
     pub struct RigidBodyChanges: u32 {
         /// Flag indicating that any component of this rigid-body has been modified.
@@ -204,6 +208,7 @@ where
 
 bitflags::bitflags! {
     #[cfg_attr(feature = "serde-serialize", derive(Serialize, Deserialize))]
+    #[derive(Copy, Clone, PartialEq, Eq, Debug)]
     /// Flags affecting the behavior of the constraints solver for a given contact manifold.
     // FIXME: rename this to LockedAxes
     pub struct LockedAxes: u8 {
@@ -214,7 +219,7 @@ bitflags::bitflags! {
         /// Flag indicating that the rigid-body cannot translate along the `Z` axis.
         const TRANSLATION_LOCKED_Z = 1 << 2;
         /// Flag indicating that the rigid-body cannot translate along any direction.
-        const TRANSLATION_LOCKED = Self::TRANSLATION_LOCKED_X.bits | Self::TRANSLATION_LOCKED_Y.bits | Self::TRANSLATION_LOCKED_Z.bits;
+        const TRANSLATION_LOCKED = Self::TRANSLATION_LOCKED_X.bits() | Self::TRANSLATION_LOCKED_Y.bits() | Self::TRANSLATION_LOCKED_Z.bits();
         /// Flag indicating that the rigid-body cannot rotate along the `X` axis.
         const ROTATION_LOCKED_X = 1 << 3;
         /// Flag indicating that the rigid-body cannot rotate along the `Y` axis.
@@ -222,7 +227,7 @@ bitflags::bitflags! {
         /// Flag indicating that the rigid-body cannot rotate along the `Z` axis.
         const ROTATION_LOCKED_Z = 1 << 5;
         /// Combination of flags indicating that the rigid-body cannot rotate along any axis.
-        const ROTATION_LOCKED = Self::ROTATION_LOCKED_X.bits | Self::ROTATION_LOCKED_Y.bits | Self::ROTATION_LOCKED_Z.bits;
+        const ROTATION_LOCKED = Self::ROTATION_LOCKED_X.bits() | Self::ROTATION_LOCKED_Y.bits() | Self::ROTATION_LOCKED_Z.bits();
     }
 }
 
@@ -307,11 +312,52 @@ impl RigidBodyMassProps {
         self.effective_inv_mass.map(crate::utils::inv)
     }
 
+    /// The square root of the effective world-space angular inertia (that takes the potential rotation locking into account) of
+    /// this rigid-body.
+    #[must_use]
+    pub fn effective_angular_inertia_sqrt(&self) -> AngularInertia<Real> {
+        #[allow(unused_mut)] // mut needed in 3D.
+        let mut ang_inertia = self.effective_world_inv_inertia_sqrt;
+
+        // Make the matrix invertible.
+        #[cfg(feature = "dim3")]
+        {
+            if self.flags.contains(LockedAxes::ROTATION_LOCKED_X) {
+                ang_inertia.m11 = 1.0;
+            }
+            if self.flags.contains(LockedAxes::ROTATION_LOCKED_Y) {
+                ang_inertia.m22 = 1.0;
+            }
+            if self.flags.contains(LockedAxes::ROTATION_LOCKED_Z) {
+                ang_inertia.m33 = 1.0;
+            }
+        }
+
+        #[allow(unused_mut)] // mut needed in 3D.
+        let mut result = ang_inertia.inverse();
+
+        // Remove the locked axes again.
+        #[cfg(feature = "dim3")]
+        {
+            if self.flags.contains(LockedAxes::ROTATION_LOCKED_X) {
+                result.m11 = 0.0;
+            }
+            if self.flags.contains(LockedAxes::ROTATION_LOCKED_Y) {
+                result.m22 = 0.0;
+            }
+            if self.flags.contains(LockedAxes::ROTATION_LOCKED_Z) {
+                result.m33 = 0.0;
+            }
+        }
+
+        result
+    }
+
     /// The effective world-space angular inertia (that takes the potential rotation locking into account) of
     /// this rigid-body.
     #[must_use]
     pub fn effective_angular_inertia(&self) -> AngularInertia<Real> {
-        self.effective_world_inv_inertia_sqrt.squared().inverse()
+        self.effective_angular_inertia_sqrt().squared()
     }
 
     /// Recompute the mass-properties of this rigid-bodies based on its currently attached colliders.
@@ -358,7 +404,7 @@ impl RigidBodyMassProps {
 
     /// Update the world-space mass properties of `self`, taking into account the new position.
     pub fn update_world_mass_properties(&mut self, position: &Isometry<Real>) {
-        self.world_com = self.local_mprops.world_com(&position);
+        self.world_com = self.local_mprops.world_com(position);
         self.effective_inv_mass = Vector::repeat(self.local_mprops.inv_mass);
         self.effective_world_inv_inertia_sqrt =
             self.local_mprops.world_inv_inertia_sqrt(&position.rotation);
@@ -530,10 +576,11 @@ impl RigidBodyVelocity {
     /// The approximate kinetic energy of this rigid-body.
     ///
     /// This approximation does not take the rigid-body's mass and angular inertia
-    /// into account.
+    /// into account. Some physics engines call this the "mass-normalized kinetic
+    /// energy".
     #[must_use]
     pub fn pseudo_kinetic_energy(&self) -> Real {
-        self.linvel.norm_squared() + self.angvel.gdot(self.angvel)
+        0.5 * (self.linvel.norm_squared() + self.angvel.gdot(self.angvel))
     }
 
     /// Returns the update velocities after applying the given damping.
@@ -553,7 +600,7 @@ impl RigidBodyVelocity {
     }
 
     /// Integrate the velocities in `self` to compute obtain new positions when moving from the given
-    /// inital position `init_pos`.
+    /// initial position `init_pos`.
     #[must_use]
     pub fn integrate(
         &self,
@@ -666,7 +713,6 @@ impl std::ops::Add<RigidBodyVelocity> for RigidBodyVelocity {
 }
 
 impl std::ops::AddAssign<RigidBodyVelocity> for RigidBodyVelocity {
-    #[must_use]
     fn add_assign(&mut self, rhs: Self) {
         self.linvel += rhs.linvel;
         self.angvel += rhs.angvel;
@@ -747,7 +793,7 @@ impl RigidBodyForces {
         gravity: &Vector<Real>,
         mass: &Vector<Real>,
     ) {
-        self.force = self.user_force + gravity.component_mul(&mass) * self.gravity_scale;
+        self.force = self.user_force + gravity.component_mul(mass) * self.gravity_scale;
         self.torque = self.user_torque;
     }
 
@@ -781,6 +827,8 @@ pub struct RigidBodyCcd {
     pub ccd_active: bool,
     /// Is CCD enabled for this rigid-body?
     pub ccd_enabled: bool,
+    /// The soft-CCD prediction distance for this rigid-body.
+    pub soft_ccd_prediction: Real,
 }
 
 impl Default for RigidBodyCcd {
@@ -790,6 +838,7 @@ impl Default for RigidBodyCcd {
             ccd_max_dist: 0.0,
             ccd_active: false,
             ccd_enabled: false,
+            soft_ccd_prediction: 0.0,
         }
     }
 }
@@ -836,7 +885,7 @@ impl RigidBodyCcd {
 }
 
 #[cfg_attr(feature = "serde-serialize", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash)]
+#[derive(Default, Clone, Debug, Copy, PartialEq, Eq, Hash)]
 /// Internal identifiers used by the physics engine.
 pub struct RigidBodyIds {
     pub(crate) active_island_id: usize,
@@ -845,31 +894,14 @@ pub struct RigidBodyIds {
     pub(crate) active_set_timestamp: u32,
 }
 
-impl Default for RigidBodyIds {
-    fn default() -> Self {
-        Self {
-            active_island_id: 0,
-            active_set_id: 0,
-            active_set_offset: 0,
-            active_set_timestamp: 0,
-        }
-    }
-}
-
 #[cfg_attr(feature = "serde-serialize", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Default, Clone, Debug, PartialEq, Eq)]
 /// The set of colliders attached to this rigid-bodies.
 ///
 /// This should not be modified manually unless you really know what
 /// you are doing (for example if you are trying to integrate Rapier
 /// to a game engine using its component-based interface).
 pub struct RigidBodyColliders(pub Vec<ColliderHandle>);
-
-impl Default for RigidBodyColliders {
-    fn default() -> Self {
-        Self(vec![])
-    }
-}
 
 impl RigidBodyColliders {
     /// Detach a collider from this rigid-body.
@@ -946,15 +978,9 @@ impl RigidBodyColliders {
 }
 
 #[cfg_attr(feature = "serde-serialize", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Default, Clone, Debug, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 /// The dominance groups of a rigid-body.
 pub struct RigidBodyDominance(pub i8);
-
-impl Default for RigidBodyDominance {
-    fn default() -> Self {
-        RigidBodyDominance(0)
-    }
-}
 
 impl RigidBodyDominance {
     /// The actual dominance group of this rigid-body, after taking into account its type.
@@ -974,9 +1000,12 @@ impl RigidBodyDominance {
 #[derive(Copy, Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde-serialize", derive(Serialize, Deserialize))]
 pub struct RigidBodyActivation {
-    /// The threshold linear velocity bellow which the body can fall asleep.
-    pub linear_threshold: Real,
-    /// The angular linear velocity bellow which the body can fall asleep.
+    /// The threshold linear velocity below which the body can fall asleep.
+    ///
+    /// The value is "normalized", i.e., the actual threshold applied by the physics engine
+    /// is equal to this value multiplied by [`IntegrationParameters::length_unit`].
+    pub normalized_linear_threshold: Real,
+    /// The angular linear velocity below which the body can fall asleep.
     pub angular_threshold: Real,
     /// The amount of time the rigid-body must remain below the thresholds to be put to sleep.
     pub time_until_sleep: Real,
@@ -993,17 +1022,17 @@ impl Default for RigidBodyActivation {
 }
 
 impl RigidBodyActivation {
-    /// The default linear velocity bellow which a body can be put to sleep.
-    pub fn default_linear_threshold() -> Real {
+    /// The default linear velocity below which a body can be put to sleep.
+    pub fn default_normalized_linear_threshold() -> Real {
         0.4
     }
 
-    /// The default angular velocity bellow which a body can be put to sleep.
+    /// The default angular velocity below which a body can be put to sleep.
     pub fn default_angular_threshold() -> Real {
         0.5
     }
 
-    /// The amount of time the rigid-body must remain bellow it’s linear and angular velocity
+    /// The amount of time the rigid-body must remain below it’s linear and angular velocity
     /// threshold before falling to sleep.
     pub fn default_time_until_sleep() -> Real {
         2.0
@@ -1012,7 +1041,7 @@ impl RigidBodyActivation {
     /// Create a new rb_activation status initialised with the default rb_activation threshold and is active.
     pub fn active() -> Self {
         RigidBodyActivation {
-            linear_threshold: Self::default_linear_threshold(),
+            normalized_linear_threshold: Self::default_normalized_linear_threshold(),
             angular_threshold: Self::default_angular_threshold(),
             time_until_sleep: Self::default_time_until_sleep(),
             time_since_can_sleep: 0.0,
@@ -1023,7 +1052,7 @@ impl RigidBodyActivation {
     /// Create a new rb_activation status initialised with the default rb_activation threshold and is inactive.
     pub fn inactive() -> Self {
         RigidBodyActivation {
-            linear_threshold: Self::default_linear_threshold(),
+            normalized_linear_threshold: Self::default_normalized_linear_threshold(),
             angular_threshold: Self::default_angular_threshold(),
             time_until_sleep: Self::default_time_until_sleep(),
             time_since_can_sleep: Self::default_time_until_sleep(),
@@ -1034,7 +1063,7 @@ impl RigidBodyActivation {
     /// Create a new activation status that prevents the rigid-body from sleeping.
     pub fn cannot_sleep() -> Self {
         RigidBodyActivation {
-            linear_threshold: -1.0,
+            normalized_linear_threshold: -1.0,
             angular_threshold: -1.0,
             ..Self::active()
         }

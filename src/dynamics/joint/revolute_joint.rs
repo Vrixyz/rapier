@@ -1,6 +1,6 @@
 use crate::dynamics::joint::{GenericJoint, GenericJointBuilder, JointAxesMask};
 use crate::dynamics::{JointAxis, JointLimits, JointMotor, MotorModel};
-use crate::math::{Point, Real};
+use crate::math::{Point, Real, Rotation};
 
 #[cfg(feature = "dim3")]
 use crate::math::UnitVector;
@@ -17,6 +17,7 @@ pub struct RevoluteJoint {
 impl RevoluteJoint {
     /// Creates a new revolute joint allowing only relative rotations.
     #[cfg(feature = "dim2")]
+    #[allow(clippy::new_without_default)] // For symmetry with 3D which can’t have a Default impl.
     pub fn new() -> Self {
         let data = GenericJointBuilder::new(JointAxesMask::LOCKED_REVOLUTE_AXES);
         Self { data: data.build() }
@@ -72,6 +73,29 @@ impl RevoluteJoint {
     pub fn set_local_anchor2(&mut self, anchor2: Point<Real>) -> &mut Self {
         self.data.set_local_anchor2(anchor2);
         self
+    }
+
+    /// The angle along the free degree of freedom of this revolute joint in `[-π, π]`.
+    ///
+    /// # Parameters
+    /// - `rb_rot1`: the rotation of the first rigid-body attached to this revolute joint.
+    /// - `rb_rot2`: the rotation of the second rigid-body attached to this revolute joint.
+    pub fn angle(&self, rb_rot1: &Rotation<Real>, rb_rot2: &Rotation<Real>) -> Real {
+        let joint_rot1 = rb_rot1 * self.data.local_frame1.rotation;
+        let joint_rot2 = rb_rot2 * self.data.local_frame2.rotation;
+        let ang_err = joint_rot1.inverse() * joint_rot2;
+
+        #[cfg(feature = "dim3")]
+        if joint_rot1.dot(&joint_rot2) < 0.0 {
+            -ang_err.i.asin() * 2.0
+        } else {
+            ang_err.i.asin() * 2.0
+        }
+
+        #[cfg(feature = "dim2")]
+        {
+            ang_err.angle()
+        }
     }
 
     /// The motor affecting the joint’s rotational degree of freedom.
@@ -137,9 +161,9 @@ impl RevoluteJoint {
     }
 }
 
-impl Into<GenericJoint> for RevoluteJoint {
-    fn into(self) -> GenericJoint {
-        self.data
+impl From<RevoluteJoint> for GenericJoint {
+    fn from(val: RevoluteJoint) -> GenericJoint {
+        val.data
     }
 }
 
@@ -153,6 +177,7 @@ pub struct RevoluteJointBuilder(pub RevoluteJoint);
 impl RevoluteJointBuilder {
     /// Creates a new revolute joint builder.
     #[cfg(feature = "dim2")]
+    #[allow(clippy::new_without_default)] // For symmetry with 3D which can’t have a Default impl.
     pub fn new() -> Self {
         Self(RevoluteJoint::new())
     }
@@ -241,8 +266,54 @@ impl RevoluteJointBuilder {
     }
 }
 
-impl Into<GenericJoint> for RevoluteJointBuilder {
-    fn into(self) -> GenericJoint {
-        self.0.into()
+impl From<RevoluteJointBuilder> for GenericJoint {
+    fn from(val: RevoluteJointBuilder) -> GenericJoint {
+        val.0.into()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn test_revolute_joint_angle() {
+        use crate::math::{Real, Rotation};
+        use crate::na::RealField;
+        #[cfg(feature = "dim3")]
+        use crate::{math::Vector, na::vector};
+
+        #[cfg(feature = "dim2")]
+        let revolute = super::RevoluteJointBuilder::new().build();
+        #[cfg(feature = "dim2")]
+        let rot1 = Rotation::new(1.0);
+        #[cfg(feature = "dim3")]
+        let revolute = super::RevoluteJointBuilder::new(Vector::y_axis()).build();
+        #[cfg(feature = "dim3")]
+        let rot1 = Rotation::new(vector![0.0, 1.0, 0.0]);
+
+        let steps = 100;
+
+        // The -pi and pi values will be checked later.
+        for i in 1..steps {
+            let delta = -Real::pi() + i as Real * Real::two_pi() / steps as Real;
+            #[cfg(feature = "dim2")]
+            let rot2 = Rotation::new(1.0 + delta);
+            #[cfg(feature = "dim3")]
+            let rot2 = Rotation::new(vector![0.0, 1.0 + delta, 0.0]);
+            approx::assert_relative_eq!(revolute.angle(&rot1, &rot2), delta, epsilon = 1.0e-5);
+        }
+
+        // Check the special case for -pi and pi that may return an angle with a flipped sign
+        // (because they are equivalent).
+        for delta in [-Real::pi(), Real::pi()] {
+            #[cfg(feature = "dim2")]
+            let rot2 = Rotation::new(1.0 + delta);
+            #[cfg(feature = "dim3")]
+            let rot2 = Rotation::new(vector![0.0, 1.0 + delta, 0.0]);
+            approx::assert_relative_eq!(
+                revolute.angle(&rot1, &rot2).abs(),
+                delta.abs(),
+                epsilon = 1.0e-2
+            );
+        }
     }
 }

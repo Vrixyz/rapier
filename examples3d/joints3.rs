@@ -18,10 +18,9 @@ fn create_coupled_joints(
     colliders.insert_with_parent(ColliderBuilder::cuboid(1.0, 1.0, 1.0), body1, bodies);
 
     let joint1 = GenericJointBuilder::new(JointAxesMask::empty())
-        .limits(JointAxis::X, [-3.0, 3.0])
-        .limits(JointAxis::Y, [0.0, 3.0])
-        .limits(JointAxis::Z, [0.0, 3.0])
-        .coupled_axes(JointAxesMask::Y | JointAxesMask::Z);
+        .limits(JointAxis::LinX, [-3.0, 3.0])
+        .limits(JointAxis::LinY, [0.0, 3.0])
+        .coupled_axes(JointAxesMask::LIN_Y | JointAxesMask::LIN_Z);
 
     if use_articulations {
         multibody_joints.insert(ground, body1, joint1, true);
@@ -417,13 +416,13 @@ fn create_spherical_joints_with_limits(
 
     let joint1 = SphericalJointBuilder::new()
         .local_anchor2(Point::from(-shift))
-        .limits(JointAxis::X, [-0.2, 0.2])
-        .limits(JointAxis::Y, [-0.2, 0.2]);
+        .limits(JointAxis::LinX, [-0.2, 0.2])
+        .limits(JointAxis::LinY, [-0.2, 0.2]);
 
     let joint2 = SphericalJointBuilder::new()
         .local_anchor2(Point::from(-shift))
-        .limits(JointAxis::X, [-0.3, 0.3])
-        .limits(JointAxis::Y, [-0.3, 0.3]);
+        .limits(JointAxis::LinX, [-0.3, 0.3])
+        .limits(JointAxis::LinY, [-0.3, 0.3]);
 
     if use_articulations {
         multibody_joints.insert(ground, ball1, joint1, true);
@@ -483,7 +482,7 @@ fn create_actuated_revolute_joints(
             } else if i == num - 1 {
                 let stiffness = 200.0;
                 let damping = 100.0;
-                joint = joint.motor_position(3.14 / 2.0, stiffness, damping);
+                joint = joint.motor_position(std::f32::consts::FRAC_PI_2, stiffness, damping);
             }
 
             if i == 1 {
@@ -542,7 +541,7 @@ fn create_actuated_spherical_joints(
         colliders.insert_with_parent(collider, child_handle, bodies);
 
         if i > 0 {
-            let mut joint = joint_template.clone();
+            let mut joint = joint_template;
 
             if i == 1 {
                 joint = joint
@@ -555,7 +554,12 @@ fn create_actuated_spherical_joints(
                 joint = joint
                     .motor_position(JointAxis::AngX, 0.0, stiffness, damping)
                     .motor_position(JointAxis::AngY, 1.0, stiffness, damping)
-                    .motor_position(JointAxis::AngZ, 3.14 / 2.0, stiffness, damping);
+                    .motor_position(
+                        JointAxis::AngZ,
+                        std::f32::consts::FRAC_PI_2,
+                        stiffness,
+                        damping,
+                    );
             }
 
             if use_articulations {

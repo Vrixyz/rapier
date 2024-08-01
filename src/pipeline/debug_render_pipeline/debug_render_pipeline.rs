@@ -8,13 +8,15 @@ use crate::geometry::{Cone, Cylinder};
 use crate::math::{Isometry, Point, Real, Vector, DIM};
 use crate::pipeline::debug_render_pipeline::debug_render_backend::DebugRenderObject;
 use crate::pipeline::debug_render_pipeline::DebugRenderStyle;
-use crate::utils::WBasis;
+use crate::utils::SimdBasis;
+use parry::utils::IsometryOpt;
 use std::any::TypeId;
 use std::collections::HashMap;
 
 bitflags::bitflags! {
     /// Flags indicating what part of the physics engine should be rendered
     /// by the debug-renderer.
+    #[derive(Copy, Clone, PartialEq, Eq, Debug)]
     pub struct DebugRenderMode: u32 {
         /// If this flag is set, the collider shapes will be rendered.
         const COLLIDER_SHAPES = 1 << 0;
@@ -25,7 +27,7 @@ bitflags::bitflags! {
         /// If this flag is set, the impulse joints will be rendered.
         const IMPULSE_JOINTS = 1 << 3;
         /// If this flag is set, all the joints will be rendered.
-        const JOINTS = Self::MULTIBODY_JOINTS.bits | Self::IMPULSE_JOINTS.bits;
+        const JOINTS = Self::MULTIBODY_JOINTS.bits() | Self::IMPULSE_JOINTS.bits();
         /// If this flag is set, the solver contacts will be rendered.
         const SOLVER_CONTACTS = 1 << 4;
         /// If this flag is set, the geometric contacts will be rendered.
@@ -41,12 +43,17 @@ impl Default for DebugRenderMode {
     }
 }
 
+#[cfg(feature = "dim2")]
+type InstancesMap = HashMap<TypeId, Vec<Point<Real>>>;
+#[cfg(feature = "dim3")]
+type InstancesMap = HashMap<TypeId, (Vec<Point<Real>>, Vec<[u32; 2]>)>;
+
 /// Pipeline responsible for rendering the state of the physics engine for debugging purpose.
 pub struct DebugRenderPipeline {
     #[cfg(feature = "dim2")]
-    instances: HashMap<TypeId, Vec<Point<Real>>>,
+    instances: InstancesMap,
     #[cfg(feature = "dim3")]
-    instances: HashMap<TypeId, (Vec<Point<Real>>, Vec<[u32; 2]>)>,
+    instances: InstancesMap,
     /// The style used to compute the line colors for each element
     /// to render.
     pub style: DebugRenderStyle,
@@ -110,16 +117,19 @@ impl DebugRenderPipeline {
                     if backend.filter_object(object) {
                         for manifold in &pair.manifolds {
                             for contact in manifold.contacts() {
+                                let world_subshape_pos1 =
+                                    manifold.subshape_pos1.prepend_to(co1.position());
                                 backend.draw_line(
                                     object,
-                                    co1.position() * contact.local_p1,
-                                    co2.position() * contact.local_p2,
+                                    world_subshape_pos1 * contact.local_p1,
+                                    manifold.subshape_pos2.prepend_to(co2.position())
+                                        * contact.local_p2,
                                     self.style.contact_depth_color,
                                 );
                                 backend.draw_line(
                                     object,
-                                    co1.position() * contact.local_p1,
-                                    co1.position()
+                                    world_subshape_pos1 * contact.local_p1,
+                                    world_subshape_pos1
                                         * (contact.local_p1
                                             + manifold.local_n1 * self.style.contact_normal_length),
                                     self.style.contact_normal_color,
@@ -175,7 +185,9 @@ impl DebugRenderPipeline {
             }
 
             if let (Some(rb1), Some(rb2)) = (bodies.get(body1), bodies.get(body2)) {
-                let coeff = if (rb1.is_fixed() || rb1.is_sleeping())
+                let coeff = if !data.is_enabled() || !rb1.is_enabled() || !rb2.is_enabled() {
+                    self.style.disabled_color_multiplier
+                } else if (rb1.is_fixed() || rb1.is_sleeping())
                     && (rb2.is_fixed() || rb2.is_sleeping())
                 {
                     self.style.sleep_color_multiplier
@@ -219,7 +231,7 @@ impl DebugRenderPipeline {
         }
 
         if self.mode.contains(DebugRenderMode::MULTIBODY_JOINTS) {
-            for (handle, multibody, link) in multibody_joints.iter() {
+            for (handle, _, multibody, link) in multibody_joints.iter() {
                 let anc_color = self.style.multibody_joint_anchor_color;
                 let sep_color = self.style.multibody_joint_separation_color;
                 let parent = multibody.link(link.parent_id().unwrap()).unwrap();
@@ -250,7 +262,9 @@ impl DebugRenderPipeline {
                 && backend.filter_object(object)
             {
                 let basis = rb.rotation().to_rotation_matrix().into_inner();
-                let coeff = if rb.is_sleeping() {
+                let coeff = if !rb.is_enabled() {
+                    self.style.disabled_color_multiplier
+                } else if rb.is_sleeping() {
                     self.style.sleep_color_multiplier
                 } else {
                     [1.0; 4]
@@ -260,7 +274,10 @@ impl DebugRenderPipeline {
                     [120.0 * coeff[0], 1.0 * coeff[1], 0.1 * coeff[2], coeff[3]],
                     [240.0 * coeff[0], 1.0 * coeff[1], 0.2 * coeff[2], coeff[3]],
                 ];
-                let com = rb.mprops.world_com;
+
+                let com = rb
+                    .position()
+                    .transform_point(&rb.mprops.local_mprops.local_com);
 
                 for k in 0..DIM {
                     let axis = basis.column(k) * self.style.rigid_body_axes_length;
@@ -283,7 +300,9 @@ impl DebugRenderPipeline {
 
                 if backend.filter_object(object) {
                     let color = if let Some(parent) = co.parent().and_then(|p| bodies.get(p)) {
-                        let coeff = if parent.is_sleeping() {
+                        let coeff = if !parent.is_enabled() || !co.is_enabled() {
+                            self.style.disabled_color_multiplier
+                        } else if parent.is_sleeping() {
                             self.style.sleep_color_multiplier
                         } else {
                             [1.0; 4]
@@ -350,6 +369,13 @@ impl DebugRenderPipeline {
                     &Vector::repeat(s.radius * 2.0),
                     color,
                     true,
+                );
+                // Draw a radius line to visualize rotation
+                backend.draw_line(
+                    object,
+                    pos * Point::new(s.radius * 0.2, 0.0),
+                    pos * Point::new(s.radius * 0.8, 0.0),
+                    color,
                 )
             }
             TypedShape::Cuboid(s) => {

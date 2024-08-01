@@ -9,7 +9,7 @@ pub type TemporaryInteractionIndex = EdgeIndex;
 
 /// A graph where nodes are collision objects and edges are contact or proximity algorithms.
 #[cfg_attr(feature = "serde-serialize", derive(Serialize, Deserialize))]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct InteractionGraph<N, E> {
     pub(crate) graph: Graph<N, E>,
 }
@@ -232,7 +232,9 @@ impl<'a, N: Copy, E> Iterator for InteractionsWithMut<'a, N, E> {
             let endpoints = self.graph.edge_endpoints(edge).unwrap();
             let (co1, co2) = (self.graph[endpoints.0], self.graph[endpoints.1]);
             let interaction = &mut self.graph[edge];
-            return Some((co1, co2, edge, unsafe { std::mem::transmute(interaction) }));
+            return Some((co1, co2, edge, unsafe {
+                std::mem::transmute::<&mut E, &'a mut E>(interaction)
+            }));
         }
 
         let edge = self.outgoing_edge?;
@@ -240,6 +242,8 @@ impl<'a, N: Copy, E> Iterator for InteractionsWithMut<'a, N, E> {
         let endpoints = self.graph.edge_endpoints(edge).unwrap();
         let (co1, co2) = (self.graph[endpoints.0], self.graph[endpoints.1]);
         let interaction = &mut self.graph[edge];
-        Some((co1, co2, edge, unsafe { std::mem::transmute(interaction) }))
+        Some((co1, co2, edge, unsafe {
+            std::mem::transmute::<&mut E, &'a mut E>(interaction)
+        }))
     }
 }

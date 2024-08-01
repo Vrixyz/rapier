@@ -1,4 +1,4 @@
-use crate::dynamics::solver::AnyJointVelocityConstraint;
+use crate::dynamics::solver::JointGenericOneBodyConstraint;
 use crate::dynamics::{
     joint, FixedJointBuilder, GenericJoint, IntegrationParameters, Multibody, MultibodyLink,
     RigidBodyVelocity,
@@ -17,28 +17,37 @@ use na::{UnitQuaternion, Vector3};
 pub struct MultibodyJoint {
     /// The joint’s description.
     pub data: GenericJoint,
+    /// Is the joint a kinematic joint?
+    ///
+    /// Kinematic joint velocities are never changed by the physics engine. This gives the user
+    /// total control over the values of their degrees of freedoms.
+    pub kinematic: bool,
     pub(crate) coords: SpacialVector<Real>,
     pub(crate) joint_rot: Rotation<Real>,
 }
 
 impl MultibodyJoint {
     /// Creates a new multibody joint from its description.
-    pub fn new(data: GenericJoint) -> Self {
+    pub fn new(data: GenericJoint, kinematic: bool) -> Self {
         Self {
             data,
+            kinematic,
             coords: na::zero(),
             joint_rot: Rotation::identity(),
         }
     }
 
     pub(crate) fn free(pos: Isometry<Real>) -> Self {
-        let mut result = Self::new(GenericJoint::default());
+        let mut result = Self::new(GenericJoint::default(), false);
         result.set_free_pos(pos);
         result
     }
 
     pub(crate) fn fixed(pos: Isometry<Real>) -> Self {
-        Self::new(FixedJointBuilder::new().local_frame1(pos).build().into())
+        Self::new(
+            FixedJointBuilder::new().local_frame1(pos).build().into(),
+            false,
+        )
     }
 
     pub(crate) fn set_free_pos(&mut self, pos: Isometry<Real>) {
@@ -115,6 +124,9 @@ impl MultibodyJoint {
                 let angvel = Vector3::from_row_slice(&vels[curr_free_dof..curr_free_dof + 3]);
                 let disp = UnitQuaternion::new_eps(angvel * dt, 0.0);
                 self.joint_rot = disp * self.joint_rot;
+                self.coords[3] += angvel[0] * dt;
+                self.coords[4] += angvel[1] * dt;
+                self.coords[5] += angvel[2] * dt;
             }
             _ => unreachable!(),
         }
@@ -254,15 +266,15 @@ impl MultibodyJoint {
         params: &IntegrationParameters,
         multibody: &Multibody,
         link: &MultibodyLink,
-        dof_id: usize,
-        j_id: &mut usize,
+        mut j_id: usize,
         jacobians: &mut DVector<Real>,
-        constraints: &mut Vec<AnyJointVelocityConstraint>,
-        insert_at: &mut Option<usize>,
-    ) {
+        constraints: &mut [JointGenericOneBodyConstraint],
+    ) -> usize {
+        let j_id = &mut j_id;
         let locked_bits = self.data.locked_axes.bits();
         let limit_bits = self.data.limit_axes.bits();
         let motor_bits = self.data.motor_axes.bits();
+        let mut num_constraints = 0;
         let mut curr_free_dof = 0;
 
         for i in 0..DIM {
@@ -281,11 +293,11 @@ impl MultibodyJoint {
                         &self.data.motors[i],
                         self.coords[i],
                         limits,
-                        dof_id + curr_free_dof,
+                        curr_free_dof,
                         j_id,
                         jacobians,
                         constraints,
-                        insert_at,
+                        &mut num_constraints,
                     );
                 }
 
@@ -296,11 +308,11 @@ impl MultibodyJoint {
                         link,
                         [self.data.limits[i].min, self.data.limits[i].max],
                         self.coords[i],
-                        dof_id + curr_free_dof,
+                        curr_free_dof,
                         j_id,
                         jacobians,
                         constraints,
-                        insert_at,
+                        &mut num_constraints,
                     );
                 }
                 curr_free_dof += 1;
@@ -331,11 +343,11 @@ impl MultibodyJoint {
                         link,
                         limits,
                         self.coords[i],
-                        dof_id + curr_free_dof,
+                        curr_free_dof,
                         j_id,
                         jacobians,
                         constraints,
-                        insert_at,
+                        &mut num_constraints,
                     );
                     Some(limits)
                 } else {
@@ -350,15 +362,17 @@ impl MultibodyJoint {
                         &self.data.motors[i],
                         self.coords[i],
                         limits,
-                        dof_id + curr_free_dof,
+                        curr_free_dof,
                         j_id,
                         jacobians,
                         constraints,
-                        insert_at,
+                        &mut num_constraints,
                     );
                 }
                 curr_free_dof += 1;
             }
         }
+
+        num_constraints
     }
 }

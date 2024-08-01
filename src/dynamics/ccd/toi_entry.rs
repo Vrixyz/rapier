@@ -13,7 +13,6 @@ pub struct TOIEntry {
     // We call this "pseudo" intersection because this also
     // includes colliders pairs with mismatching solver_groups.
     pub is_pseudo_intersection_test: bool,
-    pub timestamp: usize,
 }
 
 impl TOIEntry {
@@ -24,7 +23,6 @@ impl TOIEntry {
         c2: ColliderHandle,
         b2: Option<RigidBodyHandle>,
         is_pseudo_intersection_test: bool,
-        timestamp: usize,
     ) -> Self {
         Self {
             toi,
@@ -33,7 +31,6 @@ impl TOIEntry {
             c2,
             b2,
             is_pseudo_intersection_test,
-            timestamp,
         }
     }
 
@@ -129,7 +126,7 @@ impl TOIEntry {
         //     .ok();
 
         let res_toi = query_dispatcher
-            .nonlinear_time_of_impact(
+            .cast_shapes_nonlinear(
                 &motion_c1,
                 co1.shape.as_ref(),
                 &motion_c2,
@@ -143,13 +140,12 @@ impl TOIEntry {
         let toi = res_toi??;
 
         Some(Self::new(
-            toi.toi,
+            toi.time_of_impact,
             ch1,
             co1.parent.map(|p| p.handle),
             ch2,
             co2.parent.map(|p| p.handle),
             is_pseudo_intersection_test,
-            0,
         ))
     }
 
@@ -169,13 +165,15 @@ impl TOIEntry {
 
 impl PartialOrd for TOIEntry {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        (-self.toi).partial_cmp(&(-other.toi))
+        Some(self.cmp(other))
     }
 }
 
 impl Ord for TOIEntry {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).unwrap()
+        (-self.toi)
+            .partial_cmp(&(-other.toi))
+            .unwrap_or(std::cmp::Ordering::Equal)
     }
 }
 

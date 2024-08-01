@@ -36,7 +36,7 @@ pub(crate) type JointIndex = usize;
 pub(crate) type JointGraphEdge = crate::data::graph::Edge<ImpulseJoint>;
 
 #[cfg_attr(feature = "serde-serialize", derive(Serialize, Deserialize))]
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 /// A set of impulse_joints that can be handled by a physics `World`.
 pub struct ImpulseJointSet {
     rb_graph_ids: Coarena<RigidBodyGraphIndex>,
@@ -105,8 +105,8 @@ impl ImpulseJointSet {
     }
 
     /// Iterates through all the impulse joints attached to the given rigid-body.
-    pub fn map_attached_joints_mut<'a>(
-        &'a mut self,
+    pub fn map_attached_joints_mut(
+        &mut self,
         body: RigidBodyHandle,
         mut f: impl FnMut(RigidBodyHandle, RigidBodyHandle, ImpulseJointHandle, &mut ImpulseJoint),
     ) {
@@ -214,7 +214,8 @@ impl ImpulseJointSet {
     //     //     .map(|e| &mut e.weight)
     // }
 
-    #[cfg(not(feature = "parallel"))]
+    // #[cfg(not(feature = "parallel"))]
+    #[allow(dead_code)] // That will likely be useful when we re-introduce intra-island parallelism.
     pub(crate) fn joints_mut(&mut self) -> &mut [JointGraphEdge] {
         &mut self.joint_graph.graph.edges[..]
     }
@@ -281,7 +282,7 @@ impl ImpulseJointSet {
         &self,
         islands: &IslandManager,
         bodies: &RigidBodySet,
-        out: &mut Vec<Vec<JointIndex>>,
+        out: &mut [Vec<JointIndex>],
     ) {
         for out_island in &mut out[..islands.num_islands()] {
             out_island.clear();

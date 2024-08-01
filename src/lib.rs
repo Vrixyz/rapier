@@ -6,12 +6,16 @@
 //! Rapier has some unique features for collaborative applications:
 //! - The ability to snapshot the state of the physics engine, and restore it later.
 //! - The ability to run a perfectly deterministic simulation on different machine, as long as they
-//! are compliant with the IEEE 754-2008 floating point standard.
+//!   are compliant with the IEEE 754-2008 floating point standard.
 //!
 //! User documentation for Rapier is on [the official Rapier site](https://rapier.rs/docs/).
 
 #![deny(bare_trait_objects)]
-#![warn(missing_docs)] // FIXME: deny that
+#![warn(missing_docs)]
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::needless_range_loop)] // TODO: remove this? I find that in the math code using indices adds clarity.
+#![allow(clippy::module_inception)]
+#![allow(unexpected_cfgs)] // This happens due to the dim2/dim3/f32/f64 cfg.
 
 #[cfg(all(feature = "dim2", feature = "f32"))]
 pub extern crate parry2d as parry;
@@ -24,12 +28,10 @@ pub extern crate parry3d_f64 as parry;
 
 pub extern crate crossbeam;
 pub extern crate nalgebra as na;
-#[cfg(feature = "serde")]
+#[cfg(feature = "serde-serialize")]
 #[macro_use]
 extern crate serde;
 extern crate num_traits as num;
-// #[macro_use]
-// extern crate array_macro;
 
 #[cfg(feature = "parallel")]
 pub use rayon;
@@ -163,6 +165,10 @@ pub mod math {
     #[cfg(feature = "dim2")]
     pub type JacobianViewMut<'a, N> = na::MatrixViewMut3xX<'a, N>;
 
+    /// The type of impulse applied for friction constraints.
+    #[cfg(feature = "dim2")]
+    pub type TangentImpulse<N> = na::Vector1<N>;
+
     /// The maximum number of possible rotations and translations of a rigid body.
     #[cfg(feature = "dim2")]
     pub const SPATIAL_DIM: usize = 3;
@@ -191,6 +197,10 @@ pub mod math {
     /// The type of a mutable slice of the constraint Jacobian in twist coordinates.
     #[cfg(feature = "dim3")]
     pub type JacobianViewMut<'a, N> = na::MatrixViewMut6xX<'a, N>;
+
+    /// The type of impulse applied for friction constraints.
+    #[cfg(feature = "dim3")]
+    pub type TangentImpulse<N> = na::Vector2<N>;
 
     /// The maximum number of possible rotations and translations of a rigid body.
     #[cfg(feature = "dim3")]

@@ -1,7 +1,9 @@
+#![allow(clippy::bad_bit_mask)] // Clippy will complain about the bitmasks due to JointAxesMask::FREE_FIXED_AXES being 0.
+
 use crate::dynamics::solver::MotorParameters;
 use crate::dynamics::{FixedJoint, MotorModel, PrismaticJoint, RevoluteJoint, RopeJoint};
 use crate::math::{Isometry, Point, Real, Rotation, UnitVector, Vector, SPATIAL_DIM};
-use crate::utils::{WBasis, WReal};
+use crate::utils::{SimdBasis, SimdRealCopy};
 
 #[cfg(feature = "dim3")]
 use crate::dynamics::SphericalJoint;
@@ -10,13 +12,14 @@ use crate::dynamics::SphericalJoint;
 bitflags::bitflags! {
     /// A bit mask identifying multiple degrees of freedom of a joint.
     #[cfg_attr(feature = "serde-serialize", derive(Serialize, Deserialize))]
+    #[derive(Copy, Clone, PartialEq, Eq, Debug)]
     pub struct JointAxesMask: u8 {
-        /// The translational degree of freedom along the local X axis of a joint.
-        const X = 1 << 0;
-        /// The translational degree of freedom along the local Y axis of a joint.
-        const Y = 1 << 1;
-        /// The translational degree of freedom along the local Z axis of a joint.
-        const Z = 1 << 2;
+        /// The linear (translational) degree of freedom along the local X axis of a joint.
+        const LIN_X = 1 << 0;
+        /// The linear (translational) degree of freedom along the local Y axis of a joint.
+        const LIN_Y = 1 << 1;
+        /// The linear (translational) degree of freedom along the local Z axis of a joint.
+        const LIN_Z = 1 << 2;
         /// The angular degree of freedom along the local X axis of a joint.
         const ANG_X = 1 << 3;
         /// The angular degree of freedom along the local Y axis of a joint.
@@ -24,23 +27,23 @@ bitflags::bitflags! {
         /// The angular degree of freedom along the local Z axis of a joint.
         const ANG_Z = 1 << 5;
         /// The set of degrees of freedom locked by a revolute joint.
-        const LOCKED_REVOLUTE_AXES = Self::X.bits | Self::Y.bits | Self::Z.bits | Self::ANG_Y.bits | Self::ANG_Z.bits;
+        const LOCKED_REVOLUTE_AXES = Self::LIN_X.bits() | Self::LIN_Y.bits() | Self::LIN_Z.bits() | Self::ANG_Y.bits() | Self::ANG_Z.bits();
         /// The set of degrees of freedom locked by a prismatic joint.
-        const LOCKED_PRISMATIC_AXES = Self::Y.bits | Self::Z.bits | Self::ANG_X.bits | Self::ANG_Y.bits | Self::ANG_Z.bits;
+        const LOCKED_PRISMATIC_AXES = Self::LIN_Y.bits() | Self::LIN_Z.bits() | Self::ANG_X.bits() | Self::ANG_Y.bits() | Self::ANG_Z.bits();
         /// The set of degrees of freedom locked by a fixed joint.
-        const LOCKED_FIXED_AXES = Self::X.bits | Self::Y.bits | Self::Z.bits | Self::ANG_X.bits | Self::ANG_Y.bits | Self::ANG_Z.bits;
+        const LOCKED_FIXED_AXES = Self::LIN_X.bits() | Self::LIN_Y.bits() | Self::LIN_Z.bits() | Self::ANG_X.bits() | Self::ANG_Y.bits() | Self::ANG_Z.bits();
         /// The set of degrees of freedom locked by a spherical joint.
-        const LOCKED_SPHERICAL_AXES = Self::X.bits | Self::Y.bits | Self::Z.bits;
+        const LOCKED_SPHERICAL_AXES = Self::LIN_X.bits() | Self::LIN_Y.bits() | Self::LIN_Z.bits();
         /// The set of degrees of freedom left free by a revolute joint.
-        const FREE_REVOLUTE_AXES = Self::ANG_X.bits;
+        const FREE_REVOLUTE_AXES = Self::ANG_X.bits();
         /// The set of degrees of freedom left free by a prismatic joint.
-        const FREE_PRISMATIC_AXES = Self::X.bits;
+        const FREE_PRISMATIC_AXES = Self::LIN_X.bits();
         /// The set of degrees of freedom left free by a fixed joint.
         const FREE_FIXED_AXES = 0;
         /// The set of degrees of freedom left free by a spherical joint.
-        const FREE_SPHERICAL_AXES = Self::ANG_X.bits | Self::ANG_Y.bits | Self::ANG_Z.bits;
+        const FREE_SPHERICAL_AXES = Self::ANG_X.bits() | Self::ANG_Y.bits() | Self::ANG_Z.bits();
         /// The set of all translational degrees of freedom.
-        const LIN_AXES = Self::X.bits() | Self::Y.bits() | Self::Z.bits();
+        const LIN_AXES = Self::LIN_X.bits() | Self::LIN_Y.bits() | Self::LIN_Z.bits();
         /// The set of all angular degrees of freedom.
         const ANG_AXES = Self::ANG_X.bits() | Self::ANG_Y.bits() | Self::ANG_Z.bits();
     }
@@ -50,27 +53,28 @@ bitflags::bitflags! {
 bitflags::bitflags! {
     /// A bit mask identifying multiple degrees of freedom of a joint.
     #[cfg_attr(feature = "serde-serialize", derive(Serialize, Deserialize))]
+    #[derive(Copy, Clone, PartialEq, Eq, Debug)]
     pub struct JointAxesMask: u8 {
-        /// The translational degree of freedom along the local X axis of a joint.
-        const X = 1 << 0;
-        /// The translational degree of freedom along the local Y axis of a joint.
-        const Y = 1 << 1;
+        /// The linear (translational) degree of freedom along the local X axis of a joint.
+        const LIN_X = 1 << 0;
+        /// The linear (translational) degree of freedom along the local Y axis of a joint.
+        const LIN_Y = 1 << 1;
         /// The angular degree of freedom of a joint.
         const ANG_X = 1 << 2;
         /// The set of degrees of freedom locked by a revolute joint.
-        const LOCKED_REVOLUTE_AXES = Self::X.bits | Self::Y.bits;
+        const LOCKED_REVOLUTE_AXES = Self::LIN_X.bits() | Self::LIN_Y.bits();
         /// The set of degrees of freedom locked by a prismatic joint.
-        const LOCKED_PRISMATIC_AXES = Self::Y.bits | Self::ANG_X.bits;
+        const LOCKED_PRISMATIC_AXES = Self::LIN_Y.bits() | Self::ANG_X.bits();
         /// The set of degrees of freedom locked by a fixed joint.
-        const LOCKED_FIXED_AXES = Self::X.bits | Self::Y.bits | Self::ANG_X.bits;
+        const LOCKED_FIXED_AXES = Self::LIN_X.bits() | Self::LIN_Y.bits() | Self::ANG_X.bits();
         /// The set of degrees of freedom left free by a revolute joint.
-        const FREE_REVOLUTE_AXES = Self::ANG_X.bits;
+        const FREE_REVOLUTE_AXES = Self::ANG_X.bits();
         /// The set of degrees of freedom left free by a prismatic joint.
-        const FREE_PRISMATIC_AXES = Self::X.bits;
+        const FREE_PRISMATIC_AXES = Self::LIN_X.bits();
         /// The set of degrees of freedom left free by a fixed joint.
         const FREE_FIXED_AXES = 0;
         /// The set of all translational degrees of freedom.
-        const LIN_AXES = Self::X.bits() | Self::Y.bits();
+        const LIN_AXES = Self::LIN_X.bits() | Self::LIN_Y.bits();
         /// The set of all angular degrees of freedom.
         const ANG_AXES = Self::ANG_X.bits();
     }
@@ -86,13 +90,13 @@ impl Default for JointAxesMask {
 #[cfg_attr(feature = "serde-serialize", derive(Serialize, Deserialize))]
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum JointAxis {
-    /// The translational degree of freedom along the joint’s local X axis.
-    X = 0,
-    /// The translational degree of freedom along the joint’s local Y axis.
-    Y,
-    /// The translational degree of freedom along the joint’s local Z axis.
+    /// The linear (translational) degree of freedom along the joint’s local X axis.
+    LinX = 0,
+    /// The linear (translational) degree of freedom along the joint’s local Y axis.
+    LinY,
+    /// The linear (translational) degree of freedom along the joint’s local Z axis.
     #[cfg(feature = "dim3")]
-    Z,
+    LinZ,
     /// The rotational degree of freedom along the joint’s local X axis.
     AngX,
     /// The rotational degree of freedom along the joint’s local Y axis.
@@ -121,11 +125,21 @@ pub struct JointLimits<N> {
     pub impulse: N,
 }
 
-impl<N: WReal> Default for JointLimits<N> {
+impl<N: SimdRealCopy> Default for JointLimits<N> {
     fn default() -> Self {
         Self {
             min: -N::splat(Real::MAX),
             max: N::splat(Real::MAX),
+            impulse: N::splat(0.0),
+        }
+    }
+}
+
+impl<N: SimdRealCopy> From<[N; 2]> for JointLimits<N> {
+    fn from(value: [N; 2]) -> Self {
+        Self {
+            min: value[0],
+            max: value[1],
             impulse: N::splat(0.0),
         }
     }
@@ -210,14 +224,23 @@ pub struct GenericJoint {
     /// The degrees-of-freedoms motorised by this joint.
     pub motor_axes: JointAxesMask,
     /// The coupled degrees of freedom of this joint.
+    ///
+    /// Note that coupling degrees of freedoms (DoF) changes the interpretation of the coupled joint’s limits and motors.
+    /// If multiple linear DoF are limited/motorized, only the limits/motor configuration for the first
+    /// coupled linear DoF is applied to all coupled linear DoF. Similarly, if multiple angular DoF are limited/motorized
+    /// only the limits/motor configuration for the first coupled angular DoF is applied to all coupled angular DoF.
     pub coupled_axes: JointAxesMask,
     /// The limits, along each degrees of freedoms of this joint.
     ///
     /// Note that the limit must also be explicitly enabled by the `limit_axes` bitmask.
+    /// For coupled degrees of freedoms (DoF), only the first linear (resp. angular) coupled DoF limit and `limit_axis`
+    /// bitmask is applied to the coupled linear (resp. angular) axes.
     pub limits: [JointLimits<Real>; SPATIAL_DIM],
     /// The motors, along each degrees of freedoms of this joint.
     ///
-    /// Note that the mostor must also be explicitly enabled by the `motors` bitmask.
+    /// Note that the motor must also be explicitly enabled by the `motor_axes` bitmask.
+    /// For coupled degrees of freedoms (DoF), only the first linear (resp. angular) coupled DoF motor and `motor_axes`
+    /// bitmask is applied to the coupled linear (resp. angular) axes.
     pub motors: [JointMotor; SPATIAL_DIM],
     /// Are contacts between the attached rigid-bodies enabled?
     pub contacts_enabled: bool,
@@ -475,6 +498,24 @@ impl GenericJoint {
         self.motors[i].damping = damping;
         self
     }
+
+    /// Flips the orientation of the joint, including limits and motors.
+    pub fn flip(&mut self) {
+        std::mem::swap(&mut self.local_frame1, &mut self.local_frame2);
+
+        let coupled_bits = self.coupled_axes.bits();
+
+        for dim in 0..SPATIAL_DIM {
+            if coupled_bits & (1 << dim) == 0 {
+                let limit = self.limits[dim];
+                self.limits[dim].min = -limit.max;
+                self.limits[dim].max = -limit.min;
+            }
+
+            self.motors[dim].target_vel = -self.motors[dim].target_vel;
+            self.motors[dim].target_pos = -self.motors[dim].target_pos;
+        }
+    }
 }
 
 macro_rules! joint_conversion_methods(
@@ -485,7 +526,7 @@ macro_rules! joint_conversion_methods(
             if self.locked_axes == $axes {
                 // SAFETY: this is OK because the target joint type is
                 //         a `repr(transparent)` newtype of `Joint`.
-                Some(unsafe { std::mem::transmute(self) })
+                Some(unsafe { std::mem::transmute::<&Self, &$Joint>(self) })
             } else {
                 None
             }
@@ -497,7 +538,7 @@ macro_rules! joint_conversion_methods(
             if self.locked_axes == $axes {
                 // SAFETY: this is OK because the target joint type is
                 //         a `repr(transparent)` newtype of `Joint`.
-                Some(unsafe { std::mem::transmute(self) })
+                Some(unsafe { std::mem::transmute::<&mut Self, &mut $Joint>(self) })
             } else {
                 None
             }
@@ -685,8 +726,8 @@ impl GenericJointBuilder {
     }
 }
 
-impl Into<GenericJoint> for GenericJointBuilder {
-    fn into(self) -> GenericJoint {
-        self.0
+impl From<GenericJointBuilder> for GenericJoint {
+    fn from(val: GenericJointBuilder) -> GenericJoint {
+        val.0
     }
 }
