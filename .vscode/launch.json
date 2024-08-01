@@ -64,10 +64,29 @@
         {
             "type": "lldb",
             "request": "launch",
+            "name": "Debug unit tests in library 'rapier_testbed2d'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=rapier_testbed2d-f64"
+                ],
+                "filter": {
+                    "name": "rapier_testbed2d",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
             "name": "Debug executable 'all_examples2'",
             "cargo": {
                 "args": [
-                    "run",
+                    "build",
                     "--bin=all_examples2",
                     "--package=rapier-examples-2d"
                 ],
@@ -104,8 +123,7 @@
             "name": "Debug executable 'all_benchmarks2'",
             "cargo": {
                 "args": [
-                    "run",
-                    "--release",
+                    "build",
                     "--bin=all_benchmarks2",
                     "--package=rapier-benchmarks-2d"
                 ],
@@ -196,6 +214,25 @@
         {
             "type": "lldb",
             "request": "launch",
+            "name": "Debug unit tests in library 'rapier_testbed3d'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=rapier_testbed3d-f64"
+                ],
+                "filter": {
+                    "name": "rapier_testbed3d",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
             "name": "Debug executable 'all_examples3'",
             "cargo": {
                 "args": [
@@ -219,25 +256,6 @@
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=all_examples3",
-                    "--package=rapier-examples-3d"
-                ],
-                "filter": {
-                    "name": "all_examples3",
-                    "kind": "bin"
-                }
-            },
-            "args": [],
-            "cwd": "${workspaceFolder}"
-        },
-        {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Run 'all_examples3'",
-            "cargo": {
-                "args": [
-                    "run",
-                    "--release",
                     "--bin=all_examples3",
                     "--package=rapier-examples-3d"
                 ],
@@ -280,6 +298,81 @@
                 ],
                 "filter": {
                     "name": "harness_capsules3",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'rapier3d_urdf'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=rapier3d-urdf"
+                ],
+                "filter": {
+                    "name": "rapier3d_urdf",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'rapier3d_stl'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=rapier3d-stl"
+                ],
+                "filter": {
+                    "name": "rapier3d_stl",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'all_examples3-f64'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=all_examples3-f64",
+                    "--package=rapier-examples-3d-f64"
+                ],
+                "filter": {
+                    "name": "all_examples3-f64",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'all_examples3-f64'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=all_examples3-f64",
+                    "--package=rapier-examples-3d-f64"
+                ],
+                "filter": {
+                    "name": "all_examples3-f64",
                     "kind": "bin"
                 }
             },

@@ -1,4 +1,4 @@
-use rapier2d::{prelude::*, parry};
+use rapier2d::{parry, prelude::*};
 use rapier_testbed2d::Testbed;
 
 pub fn init_world(testbed: &mut Testbed) {
@@ -13,11 +13,17 @@ pub fn init_world(testbed: &mut Testbed) {
     // Bug
 
     let shape1 = SharedShape::capsule_y(5.0, 10.0);
-    let mut vec = Vec::<Point::<Real>>::with_capacity(3);
+    let mut vec = Vec::<Point<Real>>::with_capacity(3);
     unsafe {
-        vec.push(Point::<Real> { coords : vector![64.0, 507.0] });
-        vec.push(Point::<Real> { coords : vector![440.0, 326.0] });
-        vec.push(Point::<Real> { coords : vector![1072.0, 507.0] });
+        vec.push(Point::<Real> {
+            coords: vector![64.0, 507.0],
+        });
+        vec.push(Point::<Real> {
+            coords: vector![440.0, 326.0],
+        });
+        vec.push(Point::<Real> {
+            coords: vector![1072.0, 507.0],
+        });
     }
     let shape2 = SharedShape::convex_polyline(vec);
     let shape2 = shape2.unwrap();
@@ -42,13 +48,17 @@ pub fn init_world(testbed: &mut Testbed) {
     let handle = bodies.insert(rigid_body);
     //let collider = ColliderBuilder::ball(rad);
     colliders.insert_with_parent(ColliderBuilder::new(shape1.clone()), handle, &mut bodies);
-    
+
     if let Ok(Some(contact)) = parry::query::contact(
-        &transform1, shape1.as_ref(), &transform2, shape2.as_ref(), 1.0
+        &transform1,
+        shape1.as_ref(),
+        &transform2,
+        shape2.as_ref(),
+        1.0,
     ) {
         panic!("collision");
     } else {
-        print!("no collision");
+        //println!("no collision");
     }
     /*
      * Set up the testbed.
