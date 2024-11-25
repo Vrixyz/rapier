@@ -192,6 +192,9 @@ impl Harness {
     pub fn add_plugin(&mut self, plugin: impl HarnessPlugin + 'static) {
         self.plugins.push(Box::new(plugin));
     }
+    pub fn plugins(&mut self) -> &Vec<Box<dyn HarnessPlugin>> {
+        &self.plugins
+    }
 
     pub fn add_callback<
         F: FnMut(Option<&mut TestbedGraphics>, &mut PhysicsState, &PhysicsEvents, &RunState) + 'static,

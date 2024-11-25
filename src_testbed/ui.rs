@@ -120,9 +120,26 @@ pub fn update_ui(
             scene_infos_ui(ui, &harness.physics);
         });
         ui.collapsing("Profile infos", |ui| {
-            ui.horizontal_wrapped(|ui| {
-                profiling_ui(ui, &harness.physics.pipeline.counters);
-            });
+                ui.group(|ui|{
+                    ui.label("Physics");
+                    ui.horizontal_wrapped(|ui| {
+                        profiling_ui(ui, &harness.physics.pipeline.counters);
+                    });
+                });
+                let plugins = harness.plugins();
+                ui.label(format!("plugins count: {}", plugins.len()));
+                if !plugins.is_empty() {
+                    ui.group(|ui|{
+                        ui.label("plugins");
+                        for (i,p) in plugins.iter().enumerate() {
+                            ui.collapsing(format!("{}", i), |ui| {
+                                ui.label(p.profiling_string());
+                                // // Ideally:
+                                // p.profiling_ui(ui);
+                            });
+                        }
+                    });
+                }
         });
         ui.collapsing("Serialization infos", |ui| {
             ui.horizontal_wrapped(|ui| {
