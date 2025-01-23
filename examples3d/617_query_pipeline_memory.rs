@@ -32,7 +32,7 @@ pub fn main() {
     let mut rng = thread_rng();
     let mut handles = VecDeque::new();
 
-    for i in 0..4 {
+    for i in 0..8 {
         pipeline.step(
             &Vector3::new(0.0, -9.81, 0.0),
             &IntegrationParameters::default(),
@@ -74,17 +74,18 @@ pub fn main() {
                 new_qp.qbvh.raw_nodes().len(),
                 bodies.len()
             );
-            let file_path = PathBuf::from(format!(
-                "./data_{}/{i}.ron",
+            let prefix = PathBuf::from(format!(
+                "./data_{}/",
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
-                    .as_secs()
+                    .as_secs(),
             ));
-            let prefix = file_path.parent().unwrap();
-            std::fs::create_dir_all(prefix).unwrap();
-            let mut file = std::fs::File::create(file_path).unwrap();
-            file.write_fmt(format_args!("{:#?}", query_pipeline.qbvh.raw_nodes()))
+            std::fs::create_dir_all(prefix.clone()).unwrap();
+            let file_qbvh = prefix.join(format!("qbvh_{i}.ron"));
+            let mut file_qbvh = std::fs::File::create(file_qbvh).unwrap();
+            file_qbvh
+                .write_fmt(format_args!("{:#?}", query_pipeline.qbvh))
                 .unwrap();
         }
 
