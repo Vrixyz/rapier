@@ -29,7 +29,7 @@ pub struct QueryPipeline {
         serde(skip, default = "crate::geometry::default_query_dispatcher")
     )]
     query_dispatcher: Arc<dyn QueryDispatcher>,
-    qbvh: Qbvh<ColliderHandle>,
+    pub qbvh: Qbvh<ColliderHandle>,
     dilation_factor: Real,
     #[cfg_attr(feature = "serde-serialize", serde(skip))]
     workspace: QbvhUpdateWorkspace,
