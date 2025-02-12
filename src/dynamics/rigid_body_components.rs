@@ -173,8 +173,10 @@ impl RigidBodyPosition {
             angvel = dpos.rotation.scaled_axis() * inv_dt;
         }
         let linvel = dpos.translation.vector * inv_dt;
-
-        RigidBodyVelocity { linvel, angvel }
+        RigidBodyVelocity {
+            linvel: linvel,
+            angvel: angvel * 0.0,
+        }
     }
 
     /// Compute new positions after integrating the given forces and velocities.
